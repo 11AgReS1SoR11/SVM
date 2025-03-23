@@ -44,6 +44,8 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
         self.intercept_ = None
         self.support_vectors_ = []  # разреженное множество
 
+    def get_op_vectors(self):
+        return self.x[self.support_vectors_], self.y[self.support_vectors_]
 
     @staticmethod
     def __set_kernel(name: str, **params):
@@ -77,61 +79,245 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
             message += str(list(kernels.keys())).strip('[]')
             raise KeyError(message)
 
+    # def __UpdateSupportSet(self):
+    #     """
+    #     Итеративно добавляет элементы в разреженное множество, используя критерий снижения ошибки.
+    #     """
+    #     errors = []
+
+    #     # Перебираем все объекты, не входящие в текущее разреженное множество S
+    #     for i in range(len(self.x)):
+    #         if i not in self.support_vectors_:
+    #             S_new = self.support_vectors_ + [i]  # Добавляем новый элемент в S
+    #             L = len(self.x)
+    #             len_S = len(S_new)
+
+    #             # Строим матрицу Omega: [l / (2γ) * K + sum(k_rj * k_ri)]
+    #             Omega_new = np.random.rand(len_S, len_S)
+    #             for i in range(len_S):
+    #                 for j in range(len_S):
+
+    #                     sum_of_k_rj_k_ri = 0
+    #                     for r in range(L):
+    #                         k_rj = self.kernel_(self.x[r], self.x[S_new[j]])
+    #                         k_ri = self.kernel_(self.x[r], self.x[S_new[i]])
+    #                         sum_of_k_rj_k_ri += k_rj * k_ri
+
+    #                     k_ij = self.kernel_(self.x[S_new[i]], self.x[S_new[j]])
+    #                     Omega_new[i][j] = (L / (2 * self.gamma)) * k_ij + sum_of_k_rj_k_ri
+
+    #             # Вектор Phi: сумма элементов ядра по столбцам
+    #             Phi_new = np.random.rand(len_S)
+    #             for i in range(len_S):
+    #                 sum_of_k_ij = 0
+    #                 for j in range(L):
+    #                     k_ij = self.kernel_(self.x[S_new[i]], self.x[j])
+    #                     sum_of_k_ij += k_ij
+    #                 Phi_new[i] = sum_of_k_ij
+
+    #             # Создаём блочную матрицу H
+    #             H_new = np.block([
+    #                 [Omega_new, Phi_new.reshape(-1, 1)],  # Левая часть
+    #                 [Phi_new.reshape(1, -1), np.array([[L]])]  # Нижний блок с транспонированным Phi и числом L
+    #             ])
+
+    #             # Вектор правой части: c_new = (sum(y_j * k_ij) для всех j) и sum(y_k)
+    #             c_new = np.random.rand(len_S + 1)
+    #             for i in range(len_S):
+    #                 sum_of_y_i_k_ij = 0
+    #                 for j in range(L):
+    #                     k_ij = self.kernel_(self.x[S_new[i]], self.x[j])
+    #                     sum_of_y_i_k_ij += k_ij * self.y[j]
+
+    #                 c_new[i] = sum_of_y_i_k_ij
+
+    #             sum_of_y_k = 0
+    #             for k in range(L):
+    #                 sum_of_y_k += self.y[k]
+    #             c_new[len_S] = sum_of_y_k
+
+    #             # Решаем систему линейных уравнений H * [β; b] = c
+    #             solution_new = np.linalg.solve(H_new, c_new)
+    #             coef_new = solution_new[:-1]  # Вектор коэффициентов β
+    #             intercept_new = solution_new[-1]  # Свободный член b
+
+    #             # Вычисляем ошибки предсказания для текущего разреженного множества
+    #             residuals = self.y - (self.kernel_(self.x, self.x[S_new]) @ coef_new + intercept_new)
+    #             error = np.mean(residuals ** 2)
+    #             errors.append((error, i, solution_new))
+
+    #     if not errors:
+    #         message = "errors is empty"
+    #         raise Exception(message)
+
+    #     # Находим элемент с наименьшей ошибкой и добавляем его в разреженное множество
+    #     errors.sort()
+    #     return errors[0]
+
+    def __solve(self, S_new, K_full, sum_K):
+        L = len(self.x)  # Число всех точек
+        len_S = len(S_new)  # Новая размерность S
+
+        # Вычисляем подматрицу K и Omega
+        K_S = K_full[np.ix_(S_new, S_new)]  # Подматрица ядра
+        # Omega_new = (L / (2 * self.gamma)) * K_S + K_full @ K_full[S_new].T  # Векторизованное умножение
+        # Строим матрицу Omega: [l / (2γ) * K + sum(k_rj * k_ri)]
+        Omega_new = np.random.rand(len_S, len_S)
+        for i in range(len_S):
+            for j in range(len_S):
+
+                sum_of_k_rj_k_ri = 0
+                for r in range(L):
+                    k_rj = self.kernel_(self.x[r], self.x[S_new[j]])
+                    k_ri = self.kernel_(self.x[r], self.x[S_new[i]])
+                    sum_of_k_rj_k_ri += k_rj * k_ri
+
+                k_ij = self.kernel_(self.x[S_new[i]], self.x[S_new[j]])
+                Omega_new[i][j] = (L / (2 * self.gamma)) * k_ij + sum_of_k_rj_k_ri
+
+        # Вектор Phi (быстрее, чем вложенный цикл)
+        Phi_new = sum_K[S_new]  # Просто берем нужные строки
+
+        # Блочная матрица H
+        H_new = np.block([
+            [Omega_new, Phi_new.reshape(-1, 1)],
+            [Phi_new.reshape(1, -1), np.array([[L]])]
+        ])
+
+        # Вектор правой части c
+        c_new = np.concatenate((K_full[S_new] @ self.y, [np.sum(self.y)]))
+
+        # Решаем систему H * [β; b] = c
+        solution_new = np.linalg.solve(H_new, c_new)
+        return solution_new
+
     def __UpdateSupportSet(self):
         """
         Итеративно добавляет элементы в разреженное множество, используя критерий снижения ошибки.
+        Оптимизированная версия с векторизацией.
         """
         errors = []
-        for i in range(len(self.x)):
-            if i not in self.support_vectors_:
-                S_new = self.support_vectors_ + [i]
-                Omega_new = self.kernel_(self.x[S_new], self.x[S_new])
-                Ones_new = np.ones((len(S_new), 1))
-                H_new = np.block([
-                    [Omega_new + self.gamma ** -1 * np.identity(len(S_new)), Ones_new],
-                    [Ones_new.T, np.array([[0]])]
-                ])
-                c_new = np.concatenate((self.y[S_new], np.array([np.sum(self.y) / len(self.y)])))
-                solution_new = np.linalg.solve(H_new, c_new)
-                coef_new = solution_new[:-1]
-                intercept_new = solution_new[-1]
-                
-                residuals = self.y - (self.kernel_(self.x, self.x[S_new]) @ coef_new + intercept_new)
-                error = np.mean(residuals ** 2)
-                errors.append((error, i))
+        L = len(self.x)  # Число всех точек
+        current_S = np.array(self.support_vectors_, dtype=int)  # Текущее множество опорных векторов
 
-        if (not errors):
-            return False
+        # Вычисляем K заранее
+        K_full = self.kernel_(self.x, self.x)  # L x L матрица ядра
+        sum_K = np.sum(K_full, axis=1)  # L x 1 (суммы по столбцам)
 
+        # Кандидаты для добавления (те, кто не в current_S)
+        candidates = [i for i in range(L) if i not in current_S]
+
+        for i in candidates:
+            S_new = np.append(current_S, [i])  # Добавляем кандидата
+            solution_new = self.__solve(S_new, K_full, sum_K)
+            coef_new = solution_new[:-1]  # Вектор коэффициентов β
+            intercept_new = solution_new[-1]  # Свободный член b
+
+            # Ошибка предсказания
+            predictions = K_full[:, S_new] @ coef_new + intercept_new
+            residuals = self.y - predictions
+            error = np.mean(residuals ** 2)
+            
+            errors.append((error, i, solution_new))
+
+        if not errors:
+            raise Exception("No valid candidates to add.")
+
+        # Добавляем элемент с минимальной ошибкой
         errors.sort()
-        best_error, best_index = errors[0]
-        
-        if best_error < self.threshold and (self.max_size is None or len(self.support_vectors_) < self.max_size):
-            self.support_vectors_.append(best_index)
-            return True
+        return errors[0]
 
-        return False
+    def __PruneSupportSet(self):
+        """
+        Итеративное прореживание опорных векторов методом уменьшения количества точек
+        на 5% за итерацию, пересчитывая параметры LS-SVM на каждом шаге.
+        """
+        prune_fraction = 0.05  # Доля удаляемых точек за итерацию
+        remaining_vectors = list(range(len(self.x)))  # Начинаем со всех точек
 
-    def __OptimizeParams(self):
+        # K_full = self.kernel_(self.x, self.x)  # L x L матрица ядра
+        # sum_K = np.sum(K_full, axis=1)  # L x 1 (суммы по столбцам)
+
+        while len(remaining_vectors) > self.max_size:
+            # Формируем подмножество точек S
+            S = remaining_vectors
+            l = len(S)
+
+            # Строим матрицу ядра K
+            K = self.kernel_(self.x[S], self.x[S])
+            
+            # Строим матрицу Omega
+            Omega = K + (l / self.gamma) * np.identity(l)
+
+            # Вектор единиц
+            Ones = np.ones((l, 1))
+
+            # Формируем матрицу H и вектор правой части
+            H = np.block([
+                [Omega, Ones],
+                [Ones.T, np.array([[0]])]
+            ])
+            rhs = np.concatenate((self.y[S], np.array([0])))
+
+            # Решаем систему линейных уравнений
+            solution = np.linalg.solve(H, rhs)
+
+            # S = remaining_vectors
+            # solution = self.__solve(S, K_full, sum_K)
+
+            alpha = solution[:-1]  # Коэффициенты α
+            b = solution[-1]  # Смещение b
+
+            # Определяем, какие вектора удалить (по наименьшим |α_i|)
+            num_to_remove = max(1, int(prune_fraction * len(S)))  # Число удаляемых точек
+            remove_indices = np.argsort(np.abs(alpha))[:num_to_remove]  # Индексы наименьших α
+
+            # Удаляем выбранные индексы
+            remaining_vectors = [S[i] for i in range(len(S)) if i not in remove_indices]
+
+        # Итоговое множество поддерживающих векторов
+        print(f"len(remaining_vectors) = {len(remaining_vectors)}")
+        self.support_vectors_ = remaining_vectors
+        return self.support_vectors_
+
+    def __OptimizeParams(self, isPrune):
         """
         Жадное обновление разреженного ядра и оптимизация коэффициентов.
         """
+        if (isPrune):
+            self.__PruneSupportSet()
+            S = self.support_vectors_
+            l = len(S)
+            # Строим матрицу ядра K
+            K = self.kernel_(self.x[S], self.x[S])
+            # Строим матрицу Omega
+            Omega = K + (l / self.gamma) * np.identity(l)
+            # Вектор единиц
+            Ones = np.ones((l, 1))
+            # Формируем матрицу H и вектор правой части
+            H = np.block([
+                [Omega, Ones],
+                [Ones.T, np.array([[0]])]
+            ])
+            rhs = np.concatenate((self.y[S], np.array([0])))
+            # Решаем систему линейных уравнений
+            solution = np.linalg.solve(H, rhs)
+            self.coef_ = solution[:-1] # Коэффициенты α
+            self.intercept_ = solution[-1] # Смещение b
+
+        else:
+            while (self.max_size is None or len(self.support_vectors_) < self.max_size):
+                best_error, best_index, solution = self.__UpdateSupportSet()
+                # check threshold
+                self.support_vectors_.append(best_index)
+                self.coef_ = solution[:-1]  # Вектор коэффициентов β
+                self.intercept_ = solution[-1]  # Свободный член b
+                print(f"support_vectors = {self.support_vectors_}")
+
+
         if not self.support_vectors_:
-            self.support_vectors_.append(0)
-        
-        S = self.support_vectors_
-        Omega = self.kernel_(self.x[S], self.x[S])
-        Ones = np.ones((len(S), 1))
-
-        H = np.block([
-            [Omega + self.gamma ** -1 * np.identity(len(S)), Ones],
-            [Ones.T, np.array([[0]])]
-        ])
-        c = np.concatenate((self.y[S], np.array([np.sum(self.y) / len(self.y)])))
-
-        solution = np.linalg.solve(H, c)
-        self.coef_ = solution[:-1]
-        self.intercept_ = solution[-1]
+            message = "No support vectors"
+            raise Exception(message)
 
 
     def fit(self, X: np.ndarray, y: np.ndarray):
@@ -151,9 +337,8 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
         if (Xloc.ndim == 2) and (yloc.ndim == 1):
             self.x = Xloc
             self.y = yloc
-
-            while self.__UpdateSupportSet():
-                self.__OptimizeParams()
+            
+            self.__OptimizeParams(False)
         else:
             message = "The fit procedure requires a 2D numpy array of features "\
                 "and 1D array of targets"

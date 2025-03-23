@@ -53,20 +53,21 @@ def train_lssvm(x, y, gamma=100, sigma=1.0, max_size = 100, threshold = 1):
     return model
 
 
-def plot_results(x_train, y_train, x_pred, y_exact, y_pred):
+def plot_results(x_op, y_op, x_true, y_true, y_pred):
     """
     Визуализирует результаты предсказаний LSSVM.
 
     Аргументы:
-    x_train (ndarray) - Исходные точки выборки.
-    y_train (ndarray) - Истинные значения для этих точек.
-    x_pred (ndarray)  - Массив предсказанных точек.
-    y_exact (ndarray) - Истинные значения для предсказанных точек.
+    x_op (ndarray) - Опорные вектора x.
+    y_op (ndarray) - Опорные вектора y.
+    x_true (ndarray)  - Истинные значения x.
+    y_true (ndarray)  - Истинные значения y.
     y_pred (ndarray)  - Предсказанные моделью значения.
     """
-    plt.scatter(x_train, y_train, color='black', label="Training Data")
-    plt.plot(x_pred, y_exact, color='black', linestyle='dashed', label="True Function")
-    plt.plot(x_pred, y_pred, color='red', label="LSSVM Prediction")
+
+    plt.scatter(x_true, y_true, color='yellow', linestyle='dashed', label="True Function")
+    plt.scatter(x_op, y_op, color='black', label="Oporny vectors")
+    plt.scatter(x_true, y_pred, color='red', label="LSSVM Prediction")
     
     plt.xlabel("Feature x")
     plt.ylabel("Target y")
@@ -117,21 +118,21 @@ def test_support_vectors_impact(x_pred, a, b, num_vectors, noise_std, gamma, sig
     plt.show()
 
 
-def e2e(n_samples, a, b, noise_std, gamma, sigma, x_pred, func = sinc):
+def e2e(n_samples, n_opor_vectors, a, b, noise_std, gamma, sigma, func = sinc):
     x_train, y_train = generate_data(n_samples, a, b, noise_std, func)
-    model = train_lssvm(x_train, y_train, max_size = n_samples)
+    model = train_lssvm(x_train, y_train, gamma, sigma, max_size = n_opor_vectors, threshold = 10e-1)
 
-    y_exact = func(x_pred) + np.random.normal(0, noise_std, size=len(x_pred))
-    y_pred = model.predict(x_pred)
+    y_pred = model.predict(x_train)
+    x_op, y_op = model.get_op_vectors()
 
-    mse, r2 = evaluate_model(y_exact, y_pred)
+    mse, r2 = evaluate_model(y_train, y_pred)
     print(f'Mean Squared Error: {mse:.4f}')
     print(f'R2 Score: {r2:.4f}')
 
-    plot_results(x_train, y_train, x_pred, y_exact, y_pred)
+    plot_results(x_op, y_op, x_train, y_train, y_pred)
 
     num_vectors = np.linspace(5, 50, 46, dtype=int)  # Количество опорных векторов
-    test_support_vectors_impact(x_pred, a, b, num_vectors, noise_std, gamma, sigma, func)
+    #test_support_vectors_impact(x_pred, a, b, num_vectors, noise_std, gamma, sigma, func)
 
 
 if __name__ == "__main__":
@@ -139,26 +140,26 @@ if __name__ == "__main__":
     """
     set hyperparams
     """
-    n_samples_train = 10
+    n_samples_train = 200
+    n_opor_vectors = 10
     noise_std = 0.0
-    gamma = 100
-    sigma = 1.0
+    gamma = 1500
+    sigma = 0.85
 
     """
     set sample
     """
     A = -5
     B = 5
-    x_pred = np.linspace(A, B, 200).reshape(-1, 1)
-
-    e2e(n_samples_train, A, B, noise_std, gamma, sigma, x_pred, sinc)
+    e2e(n_samples_train, n_opor_vectors, A, B, noise_std, gamma, sigma, sinc)
 
 
     ########### С шумом
     """
     set hyperparams
     """
-    n_samples_train = 10
+    n_samples_train = 200
+    n_opor_vectors = 10
     noise_std = 0.1
     gamma = 100
     sigma = 1.0
@@ -168,6 +169,5 @@ if __name__ == "__main__":
     """
     A = -5
     B = 5
-    x_pred = np.linspace(A, B, 200).reshape(-1, 1)
 
-    e2e(n_samples_train, A, B, noise_std, gamma, sigma, x_pred, sinc)
+    e2e(n_samples_train, n_opor_vectors, A, B, noise_std, gamma, sigma, sinc)
