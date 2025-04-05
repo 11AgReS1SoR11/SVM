@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import pandas as pd
+from scipy.spatial.distance import cdist
 from sklearn.base import BaseEstimator, RegressorMixin
 
 
@@ -59,17 +60,14 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
             return ((np.dot(xi, xj.T))/c  + 1)**d
 
         def rbf(xi, xj, sigma=params.get('sigma', 1.0)):
-
-            from scipy.spatial.distance import cdist
-            if (xi.ndim == 2 and xi.ndim == xj.ndim): # both are 2D matrices
-                return np.exp(-(cdist(xi, xj, metric='sqeuclidean'))/(2*(sigma**2)))
-            elif ((xi.ndim < 2) and (xj.ndim < 3)):
-                ax = len(xj.shape)-1 #compensate for python zero-base
-                return np.exp(-(np.dot(xi, xi) + (xj**2).sum(axis=ax)
-                                - 2*np.dot(xi, xj.T))/(2*(sigma**2)))
+            """
+            RBF kernel, handles different input shapes.
+            """
+            if xi.ndim == 2 and xj.ndim == 2:  # both are 2D matrices
+                return np.exp(-(cdist(xi, xj, metric='sqeuclidean')) / (2 * (sigma**2)))
             else:
-                message = "The rbf kernel is not suited for arrays with rank >2"
-                raise Exception(message)
+                # Broadcasting approach for other cases (e.g., xi is vector, xj is matrix)
+                return np.exp(-np.sum((xi - xj)**2, axis=-1) / (2 * (sigma**2)))
 
         kernels = {'linear': linear, 'poly': poly, 'rbf': rbf}
         if kernels.get(name) is not None:
@@ -85,21 +83,15 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
         len_S = len(S_new)  # Новая размерность S
 
         # Вычисляем подматрицу K и Omega
-        # K_S = K_full[np.ix_(S_new, S_new)]  # Подматрица ядра
-        # # Omega_new = (L / (2 * self.gamma)) * K_S + K_full @ K_full[S_new].T  # Векторизованное умножение
-        # Строим матрицу Omega: [l / (2γ) * K + sum(k_rj * k_ri)]
-        Omega_new = np.random.rand(len_S, len_S)
-        for i in range(len_S):
-            for j in range(len_S):
+        # Векторизованное вычисление Omega_new
+        x_S_new = self.x[S_new]  # Выбираем опорные векторы
+        K_SS = self.kernel_(x_S_new[:, None], x_S_new[None, :]) # K(S_new, S_new) - матрица ядровых функций между опорными векторами
 
-                sum_of_k_rj_k_ri = 0
-                for r in range(L):
-                    k_rj = self.kernel_(self.x[r], self.x[S_new[j]])
-                    k_ri = self.kernel_(self.x[r], self.x[S_new[i]])
-                    sum_of_k_rj_k_ri += k_rj * k_ri
+        # Вычисляем K(x, S_new) - матрица ядровых функций между всеми точками и опорными векторами
+        K_XS = self.kernel_(self.x[:, None], x_S_new[None, :])
 
-                k_ij = self.kernel_(self.x[S_new[i]], self.x[S_new[j]])
-                Omega_new[i][j] = (L / (2 * self.gamma)) * k_ij + sum_of_k_rj_k_ri
+        # Вычисляем Omega_new с использованием матричного умножения
+        Omega_new = (L / (2 * self.gamma)) * K_SS + K_XS.T @ K_XS
 
         # Вектор Phi
         Phi_new = sum_K[S_new]
@@ -128,16 +120,16 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
 
         # Вычисляем K заранее
         K_full = self.kernel_(self.x, self.x)  # L x L матрица ядра
-        sum_K = np.sum(K_full, axis=1)  # L x 1 (суммы по столбцам)
+        sum_K = np.sum(K_full, axis=1)         # L x 1 (суммы по столбцам)
 
         # Кандидаты для добавления (те, кто не в current_S)
         candidates = [i for i in range(L) if i not in current_S]
 
         for i in candidates:
-            S_new = np.append(current_S, [i])  # Добавляем кандидата
+            S_new = np.append(current_S, [i])     # Добавляем кандидата
             solution_new = self.__solve(S_new, K_full, sum_K)
-            coef_new = solution_new[:-1]  # Вектор коэффициентов β
-            intercept_new = solution_new[-1]  # Свободный член b
+            coef_new = solution_new[:-1]          # Вектор коэффициентов β
+            intercept_new = solution_new[-1]      # Свободный член b
 
             # Ошибка предсказания
             predictions = K_full[:, S_new] @ coef_new + intercept_new
@@ -160,9 +152,6 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
         """
         prune_fraction = 0.05  # Доля удаляемых точек за итерацию
         remaining_vectors = list(range(len(self.x)))  # Начинаем со всех точек
-
-        # K_full = self.kernel_(self.x, self.x)  # L x L матрица ядра
-        # sum_K = np.sum(K_full, axis=1)  # L x 1 (суммы по столбцам)
 
         while len(remaining_vectors) > self.max_size:
             # Формируем подмножество точек S
@@ -188,14 +177,11 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
             # Решаем систему линейных уравнений
             solution = np.linalg.solve(H, rhs)
 
-            # S = remaining_vectors
-            # solution = self.__solve(S, K_full, sum_K)
-
             alpha = solution[:-1]  # Коэффициенты α
-            b = solution[-1]  # Смещение b
+            b = solution[-1]       # Смещение b
 
             # Определяем, какие вектора удалить (по наименьшим |α_i|)
-            num_to_remove = max(1, int(prune_fraction * len(S)))  # Число удаляемых точек
+            num_to_remove = max(1, int(prune_fraction * len(S)))        # Число удаляемых точек
             remove_indices = np.argsort(np.abs(alpha))[:num_to_remove]  # Индексы наименьших α
 
             # Удаляем выбранные индексы
@@ -228,16 +214,18 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
             rhs = np.concatenate((self.y[S], np.array([0])))
             # Решаем систему линейных уравнений
             solution = np.linalg.solve(H, rhs)
-            self.coef_ = solution[:-1] # Коэффициенты α
+            self.coef_ = solution[:-1]     # Коэффициенты α
             self.intercept_ = solution[-1] # Смещение b
 
         else:
             while (self.max_size is None or len(self.support_vectors_) < self.max_size):
                 best_error, best_index, solution = self.__UpdateSupportSet()
-                # check threshold
                 self.support_vectors_.append(best_index)
-                self.coef_ = solution[:-1]  # Вектор коэффициентов β
+                self.coef_ = solution[:-1]      # Вектор коэффициентов β
                 self.intercept_ = solution[-1]  # Свободный член b
+
+                if (best_error < self.threshold):
+                    return
 
 
         if not self.support_vectors_:
@@ -263,7 +251,7 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
             self.x = Xloc
             self.y = yloc
             
-            self.__OptimizeParams(False)
+            self.__OptimizeParams(False) # bool parametr isPrune
         else:
             message = "The fit procedure requires a 2D numpy array of features "\
                 "and 1D array of targets"

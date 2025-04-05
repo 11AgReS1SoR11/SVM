@@ -35,13 +35,8 @@ def test_support_vectors_impact(x_pred, a, b, num_vectors, noise_std, gamma, sig
     errors = []
     x, y = generate_data(200, a, b, noise_std, func)
 
-    i = 0
     for n in num_vectors:
-        ####
-        i += 1
-        print(f"{((i / len(num_vectors)) * 100):.2f}%")
-        ####
-        model = train_lssvm(x, y, gamma=gamma, sigma=sigma, max_size = n, threshold = 1e-10)
+        model = train_lssvm(x, y, gamma=gamma, sigma=sigma, max_size = n, threshold = 1e-15) # there shouldn't use threshold
 
         y_pred = model.predict(x_pred)
 
@@ -59,9 +54,9 @@ def test_support_vectors_impact(x_pred, a, b, num_vectors, noise_std, gamma, sig
         plt.savefig('MSE_vs_n_vectors.png')
 
 
-def e2e(n_samples, n_opor_vectors, a, b, noise_std, gamma, sigma, func = sinc):
+def e2e(n_samples, n_opor_vectors, a, b, noise_std, gamma, sigma, threshold, func = sinc):
     x_train, y_train = generate_data(n_samples, a, b, noise_std, func)
-    model = train_lssvm(x_train, y_train, gamma, sigma, max_size = n_opor_vectors, threshold = 1e-10)
+    model = train_lssvm(x_train, y_train, gamma, sigma, max_size = n_opor_vectors, threshold = threshold)
 
     y_pred = model.predict(x_train)
     x_op, y_op = model.get_op_vectors()
@@ -83,6 +78,7 @@ if __name__ == "__main__":
     """
     n_samples_train = 200
     n_opor_vectors = 10
+    threshold = 1e-6
     noise_std = 0.0
     gamma = 1500 #2**30
     sigma = 0.85 # 0.05
@@ -92,7 +88,7 @@ if __name__ == "__main__":
     """
     A = -5
     B = 5
-    e2e(n_samples_train, n_opor_vectors, A, B, noise_std, gamma, sigma, sinc)
+    e2e(n_samples_train, n_opor_vectors, A, B, noise_std, gamma, sigma, threshold, sinc)
 
 
     ########### С шумом
@@ -101,6 +97,7 @@ if __name__ == "__main__":
     """
     n_samples_train = 200
     n_opor_vectors = 10
+    threshold = 1e-6
     noise_std = 0.1
     gamma = 1500 #2**30
     sigma = 0.85 # 0.05
@@ -111,4 +108,4 @@ if __name__ == "__main__":
     A = -5
     B = 5
 
-    e2e(n_samples_train, n_opor_vectors, A, B, noise_std, gamma, sigma, sinc)
+    e2e(n_samples_train, n_opor_vectors, A, B, noise_std, gamma, sigma, threshold, sinc)

@@ -61,13 +61,7 @@ def tune_gslssvm_grid_search(X, Y, noise):
     """
 
     sigmas = np.arange(-1, 1.1, 0.1)
-    # gammas = [10 * (3 ** i) for i in range(int(math.log(10000/10,3)) + 1)] # Логарифмически равномерное от 10 до 100000 с шагом в 3 раза
-    # gammas = [1.5**i for i in range(25, 30)]
     gammas = [10**i for i in range(1, 6)]
-    # gammas = [2**30 + i for i in range(1000, 10000, 500)]
-
-    # print(f"Gammas: {gammas}")
-    # print(f"Sigmas: {sigmas}")
 
     best_gamma = None
     best_sigma = None
@@ -85,9 +79,6 @@ def tune_gslssvm_grid_search(X, Y, noise):
         ####
         for j, sigma in enumerate(sigmas):
             try:
-                # ####
-                # print(f"{((j + i * len(sigmas))/(len(gammas) * len(sigmas)) * 100):.2f}%")
-                # ####
                 model = train_lssvm(X, Y, gamma, sigma, max_size = n_opor_vectors, threshold = threshold)
 
                 y_pred = model.predict(X)
@@ -100,7 +91,6 @@ def tune_gslssvm_grid_search(X, Y, noise):
                     best_gamma = gamma
                     best_sigma = sigma
                     best_model = model
-                # print(f"Gamma: {gamma}, Sigma: {sigma}, MSE: {mse}") # Делаем отладочную печать
             except Exception as e:
                 print(f"Ошибка при Gamma: {gamma}, Sigma: {sigma}: {e}")
                 mse_matrix[i, j] = float('inf')
@@ -116,19 +106,6 @@ def plot_hyperparameter_tuning_results(gammas, sigmas, mse_matrix, noise):
     """
     Строит графики зависимости MSE от gamma и sigma.
     """
-
-    # # Heatmap
-    # plt.figure(figsize=(10, 8))
-    # plt.imshow(mse_matrix, interpolation='nearest', origin='lower', aspect='auto',
-    #            extent=[sigmas[0], sigmas[-1], gammas[0], gammas[-1]])
-    # plt.colorbar(label='MSE')
-    # plt.xlabel('Sigma')
-    # plt.ylabel('Gamma')
-    # plt.title('MSE Heatmap (Grid Search)')
-    # plt.xticks(sigmas)
-    # plt.yticks(gammas)
-    # plt.savefig('Heatmap.png')
-
 
     # Heatmap
     plt.figure(figsize=(10, 8))
