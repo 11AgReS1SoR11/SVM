@@ -79,88 +79,14 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
             message += str(list(kernels.keys())).strip('[]')
             raise KeyError(message)
 
-    # def __UpdateSupportSet(self):
-    #     """
-    #     Итеративно добавляет элементы в разреженное множество, используя критерий снижения ошибки.
-    #     """
-    #     errors = []
-
-    #     # Перебираем все объекты, не входящие в текущее разреженное множество S
-    #     for i in range(len(self.x)):
-    #         if i not in self.support_vectors_:
-    #             S_new = self.support_vectors_ + [i]  # Добавляем новый элемент в S
-    #             L = len(self.x)
-    #             len_S = len(S_new)
-
-    #             # Строим матрицу Omega: [l / (2γ) * K + sum(k_rj * k_ri)]
-    #             Omega_new = np.random.rand(len_S, len_S)
-    #             for i in range(len_S):
-    #                 for j in range(len_S):
-
-    #                     sum_of_k_rj_k_ri = 0
-    #                     for r in range(L):
-    #                         k_rj = self.kernel_(self.x[r], self.x[S_new[j]])
-    #                         k_ri = self.kernel_(self.x[r], self.x[S_new[i]])
-    #                         sum_of_k_rj_k_ri += k_rj * k_ri
-
-    #                     k_ij = self.kernel_(self.x[S_new[i]], self.x[S_new[j]])
-    #                     Omega_new[i][j] = (L / (2 * self.gamma)) * k_ij + sum_of_k_rj_k_ri
-
-    #             # Вектор Phi: сумма элементов ядра по столбцам
-    #             Phi_new = np.random.rand(len_S)
-    #             for i in range(len_S):
-    #                 sum_of_k_ij = 0
-    #                 for j in range(L):
-    #                     k_ij = self.kernel_(self.x[S_new[i]], self.x[j])
-    #                     sum_of_k_ij += k_ij
-    #                 Phi_new[i] = sum_of_k_ij
-
-    #             # Создаём блочную матрицу H
-    #             H_new = np.block([
-    #                 [Omega_new, Phi_new.reshape(-1, 1)],  # Левая часть
-    #                 [Phi_new.reshape(1, -1), np.array([[L]])]  # Нижний блок с транспонированным Phi и числом L
-    #             ])
-
-    #             # Вектор правой части: c_new = (sum(y_j * k_ij) для всех j) и sum(y_k)
-    #             c_new = np.random.rand(len_S + 1)
-    #             for i in range(len_S):
-    #                 sum_of_y_i_k_ij = 0
-    #                 for j in range(L):
-    #                     k_ij = self.kernel_(self.x[S_new[i]], self.x[j])
-    #                     sum_of_y_i_k_ij += k_ij * self.y[j]
-
-    #                 c_new[i] = sum_of_y_i_k_ij
-
-    #             sum_of_y_k = 0
-    #             for k in range(L):
-    #                 sum_of_y_k += self.y[k]
-    #             c_new[len_S] = sum_of_y_k
-
-    #             # Решаем систему линейных уравнений H * [β; b] = c
-    #             solution_new = np.linalg.solve(H_new, c_new)
-    #             coef_new = solution_new[:-1]  # Вектор коэффициентов β
-    #             intercept_new = solution_new[-1]  # Свободный член b
-
-    #             # Вычисляем ошибки предсказания для текущего разреженного множества
-    #             residuals = self.y - (self.kernel_(self.x, self.x[S_new]) @ coef_new + intercept_new)
-    #             error = np.mean(residuals ** 2)
-    #             errors.append((error, i, solution_new))
-
-    #     if not errors:
-    #         message = "errors is empty"
-    #         raise Exception(message)
-
-    #     # Находим элемент с наименьшей ошибкой и добавляем его в разреженное множество
-    #     errors.sort()
-    #     return errors[0]
 
     def __solve(self, S_new, K_full, sum_K):
         L = len(self.x)  # Число всех точек
         len_S = len(S_new)  # Новая размерность S
 
         # Вычисляем подматрицу K и Omega
-        K_S = K_full[np.ix_(S_new, S_new)]  # Подматрица ядра
-        # Omega_new = (L / (2 * self.gamma)) * K_S + K_full @ K_full[S_new].T  # Векторизованное умножение
+        # K_S = K_full[np.ix_(S_new, S_new)]  # Подматрица ядра
+        # # Omega_new = (L / (2 * self.gamma)) * K_S + K_full @ K_full[S_new].T  # Векторизованное умножение
         # Строим матрицу Omega: [l / (2γ) * K + sum(k_rj * k_ri)]
         Omega_new = np.random.rand(len_S, len_S)
         for i in range(len_S):
@@ -175,8 +101,8 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
                 k_ij = self.kernel_(self.x[S_new[i]], self.x[S_new[j]])
                 Omega_new[i][j] = (L / (2 * self.gamma)) * k_ij + sum_of_k_rj_k_ri
 
-        # Вектор Phi (быстрее, чем вложенный цикл)
-        Phi_new = sum_K[S_new]  # Просто берем нужные строки
+        # Вектор Phi
+        Phi_new = sum_K[S_new]
 
         # Блочная матрица H
         H_new = np.block([
@@ -312,7 +238,6 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
                 self.support_vectors_.append(best_index)
                 self.coef_ = solution[:-1]  # Вектор коэффициентов β
                 self.intercept_ = solution[-1]  # Свободный член b
-                print(f"support_vectors = {self.support_vectors_}")
 
 
         if not self.support_vectors_:
