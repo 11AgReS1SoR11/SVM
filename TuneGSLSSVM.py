@@ -61,7 +61,7 @@ def tune_gslssvm_grid_search(X, Y, noise):
     """
 
     sigmas = np.arange(-1, 1.1, 0.1)
-    gammas = [10**i for i in range(1, 6)]
+    gammas = [10**i for i in range(2, 10)]
 
     best_gamma = None
     best_sigma = None
@@ -134,6 +134,7 @@ def plot_hyperparameter_tuning_results(gammas, sigmas, mse_matrix, noise):
     plt.title(f'MSE vs Gamma (Sigma = {sigmas[best_sigma_index]:.2f})')
     plt.xticks(gammas)
     plt.grid(True)
+    plt.xscale('log')  # Добавляем логарифмический масштаб по оси x
     if noise > 0:
         plt.savefig('MSE_vs_Gamma_noise.png')
     else:
@@ -187,7 +188,6 @@ if __name__ == '__main__':
     set hyperparams
     """
     n_samples_train = 200
-    # n_opor_vectors = 10
     """
     set sample
     """

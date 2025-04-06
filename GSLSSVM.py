@@ -80,7 +80,6 @@ class GSLSSVM(BaseEstimator, RegressorMixin):
 
     def __solve(self, S_new, K_full, sum_K):
         L = len(self.x)  # Число всех точек
-        len_S = len(S_new)  # Новая размерность S
 
         # Вычисляем подматрицу K и Omega
         # Векторизованное вычисление Omega_new
